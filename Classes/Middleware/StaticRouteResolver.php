@@ -29,6 +29,7 @@ use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Routing\InvalidRouteArgumentsException;
 use TYPO3\CMS\Core\Routing\RouterInterface;
 use TYPO3\CMS\Core\Site\Entity\Site;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
  * Resolves static routes - can return configured content directly or load content from file / urls
@@ -190,6 +191,17 @@ class StaticRouteResolver implements MiddlewareInterface
                     throw new \InvalidArgumentException('Can only handle URIs of type page, url or file.', 1537348076);
                 }
 
+                break;
+            case 'asset':
+                if (!($routeConfig['asset'] ?? null)) {
+                    throw new \InvalidArgumentException('A static route of type "asset" must have an asset defined.', 1721134959);
+                }
+                $path = GeneralUtility::getFileAbsFileName($routeConfig['asset']);
+                if (!$path) {
+                    throw new \InvalidArgumentException(sprintf('The asset "%s" could not be found.', $routeConfig['asset']), 1721134960);
+                }
+                $content = file_get_contents($path);
+                $contentType = mime_content_type($path);
                 break;
             default:
                 throw new \InvalidArgumentException(
