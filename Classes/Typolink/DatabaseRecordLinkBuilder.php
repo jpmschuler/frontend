@@ -19,6 +19,8 @@ namespace TYPO3\CMS\Frontend\Typolink;
 
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Cache\CacheManager;
+use TYPO3\CMS\Core\Context\Context;
+use TYPO3\CMS\Core\Context\TypoScriptAspect;
 use TYPO3\CMS\Core\LinkHandling\TypoLinkCodecService;
 use TYPO3\CMS\Core\Site\Entity\NullSite;
 use TYPO3\CMS\Core\TypoScript\PageTsConfig;
@@ -39,6 +41,16 @@ class DatabaseRecordLinkBuilder extends AbstractTypolinkBuilder
         $pageTsConfig = $this->getPageTsConfig($tsfe, $request);
         $configurationKey = $linkDetails['identifier'] . '.';
         $typoScriptArray = $request->getAttribute('frontend.typoscript')?->getSetupArray() ?? [];
+        try {
+            $typoScriptArray = $request->getAttribute('frontend.typoscript')?->getSetupArray() ?? [];
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() != 1666513645) {
+                throw $e;
+            }
+
+            //An exception is thrown when TypoScript setup array is not available.
+            $typoScriptArray = $this->getFullTypoScript($tsfe, $request);
+        }
         $configuration = $typoScriptArray['config.']['recordLinks.'] ?? [];
         $linkHandlerConfiguration = $pageTsConfig['TCEMAIN.']['linkHandler.'] ?? [];
 
@@ -47,7 +59,7 @@ class DatabaseRecordLinkBuilder extends AbstractTypolinkBuilder
                 'Configuration how to link "' . $linkDetails['typoLinkParameter'] . '" was not found, so "' . $linkText . '" was not linked.',
                 1490989149,
                 null,
-                $linkText
+                $linkText,
             );
         }
         $typoScriptConfiguration = $configuration[$configurationKey]['typolink.'];
@@ -69,7 +81,7 @@ class DatabaseRecordLinkBuilder extends AbstractTypolinkBuilder
                     $overlay = $tsfe->sys_page->getLanguageOverlay(
                         $databaseTable,
                         $record,
-                        $languageAspect
+                        $languageAspect,
                     );
                     // If the record is not translated (overlays enabled), even though it should have been done
                     // We avoid linking to it
@@ -84,7 +96,7 @@ class DatabaseRecordLinkBuilder extends AbstractTypolinkBuilder
                 'Record not found for "' . $linkDetails['typoLinkParameter'] . '" was not found, so "' . $linkText . '" was not linked.',
                 1490989659,
                 null,
-                $linkText
+                $linkText,
             );
         }
 
@@ -131,5 +143,18 @@ class DatabaseRecordLinkBuilder extends AbstractTypolinkBuilder
         $pageTsConfig = $pageTsConfigFactory->create($fullRootLine, $site);
         $runtimeCache->set('pageTsConfig-' . $id, $pageTsConfig);
         return $pageTsConfig->getPageTsConfigArray();
+    }
+
+    /**
+     * Helper method to load full typoscript when in cached context.
+     * @see https://github.com/derhansen/fe_change_pwd/commit/3bb4181c8973c63458dd450a0219804e7d5496b9
+     */
+    protected function getFullTypoScript(TypoScriptFrontendController $tsfe, ServerRequestInterface $request): array
+    {
+        GeneralUtility::makeInstance(Context::class)
+            ->setAspect('typoscript', GeneralUtility::makeInstance(TypoScriptAspect::class, true));
+        $requestWithFullTypoScript = $tsfe->getFromCache($request);
+        $fullTypoScript = $requestWithFullTypoScript->getAttribute('frontend.typoscript')->getSetupArray() ?? [];
+        return $fullTypoScript;
     }
 }
